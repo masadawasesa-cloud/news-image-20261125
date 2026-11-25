@@ -1,46 +1,65 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Deliver the finished front page of the 25 November 2026 edition.
+"""Entry program for the 25 November 2026 edition of The World in One Day.
 
-The rendered newspaper page ships in this repository as entry.png. The
-harness expects the program to place it at /output/entry.png, so this
-script performs a verified byte-for-byte copy and nothing else.
+The finished front page travels with this repository as ``entry.png``.
+Running this program publishes it to the harness output directory,
+proving on the way that the source really is a PNG, that it respects
+the competition's one-mebibyte cap, and that the published bytes hash
+to exactly the source's digest.
 """
 
+import hashlib
 import os
+import sys
 from pathlib import Path
 
-REPO_DIR = Path(__file__).resolve().parent
-PAGE_FILE = REPO_DIR / "entry.png"
-BLOCK = 128 * 1024
-PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+HERE = Path(__file__).resolve().parent
+PAGE = HERE / "entry.png"
+CHUNK = 256 * 1024
+SIZE_CAP = 1_048_576  # the gate allows at most 1 MiB
+PNG_SIGNATURE = bytes((0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
 
 
-def check_page(page: Path) -> None:
-    """Refuse to deliver anything that is not a PNG image."""
-    with page.open("rb") as src:
-        if src.read(len(PNG_MAGIC)) != PNG_MAGIC:
-            raise SystemExit(f"{page.name} is not a PNG file")
+def page_digest(path):
+    """SHA-256 of a file, read in blocks so memory stays flat."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(CHUNK), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
-def deliver(page: Path, destination: Path) -> int:
-    """Stream page to destination; return the number of bytes written."""
-    total = 0
-    with page.open("rb") as src, destination.open("wb") as dst:
-        while block := src.read(BLOCK):
-            dst.write(block)
-            total += len(block)
-    expected = page.stat().st_size
-    if total != expected:
-        raise SystemExit(f"copy incomplete: wrote {total} of {expected} bytes")
-    return total
+def publish(source, target):
+    """Copy source onto target; return the number of bytes moved."""
+    moved = 0
+    with source.open("rb") as reader, target.open("wb") as writer:
+        for block in iter(lambda: reader.read(CHUNK), b""):
+            writer.write(block)
+            moved += len(block)
+    return moved
 
 
-def main() -> None:
-    check_page(PAGE_FILE)
+def main():
+    size = PAGE.stat().st_size
+    if size > SIZE_CAP:
+        sys.exit(f"entry.png is {size} bytes, over the {SIZE_CAP}-byte cap")
+    with PAGE.open("rb") as handle:
+        if handle.read(len(PNG_SIGNATURE)) != PNG_SIGNATURE:
+            sys.exit("entry.png does not start with the PNG signature")
+        handle.seek(-12, os.SEEK_END)  # a whole PNG ends with its IEND chunk
+        if handle.read()[-8:-4] != b"IEND":
+            sys.exit("entry.png is truncated: no IEND chunk at its tail")
+
     out_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
     out_dir.mkdir(parents=True, exist_ok=True)
-    deliver(PAGE_FILE, out_dir / "entry.png")
+    target = out_dir / "entry.png"
+
+    before = page_digest(PAGE)
+    publish(PAGE, target)
+    if page_digest(target) != before:
+        sys.exit("published copy failed its digest check")
+    print(f"published {target} ({size} bytes, sha256 {before[:12]}…)")
 
 
 if __name__ == "__main__":
