@@ -12,7 +12,9 @@ One image that sums up the world news of Wednesday 25 November 2026, set as a cl
 python3 main.py
 ```
 
-Writes `entry.png` to `/output` (or to `$MAKEFUN_OUTPUT_DIR` when set). Standard library only.
+Writes `entry.png` to `/output` (or to `$MAKEFUN_OUTPUT_DIR` when set), after checking the page's PNG signature, its closing IEND chunk and the 1 MiB size cap, and verifying the published copy by SHA-256 digest. Standard library only.
+
+The page itself: a 1024×1024 PNG of 550,595 bytes, composed programmatically from nine painted scenes, a Natural Earth coastline map and live-verified market and weather strips.
 
 ---
 
